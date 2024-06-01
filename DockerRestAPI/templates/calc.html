@@ -1,0 +1,290 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html> <head>
+<title>ACP Controle Times</title>
+
+  <!-- 'viewport' is used by bootstrap to respond to device size -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Javascript:  JQuery from a content distribution network (CDN) -->
+  <script
+     src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js">
+  </script>
+
+  <!-- Bootstrap includes javascript and css  (must follow jquery) -->
+  <link rel="stylesheet"
+   href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+   <script
+    src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js">
+   </script>
+
+  <!-- moment.js is the JavaScript equivalent of arrow.py -->
+  <script 
+    src="{{ url_for('static', filename="js/moment.min.js") }}"></script>
+
+</head>
+
+   <!-- Our own style sheet -->
+   <link rel="stylesheet" href="/static/css/calc.css" />
+
+<body>
+<!-- bootstrap requires a 'container' div around content -->
+<div class="container">
+
+<h1>ACP Brevet Times</h1>
+  <p>This worksheet is for ACP-sanctioned brevets between 200 and 1000 kilometers</p>
+
+  <!--
+  -- If there are any warnings or other messages from a prior
+  -- request to the server, 
+  -- they appear above the rest of the content, just until the next 
+  -- action.  (This is only on request/response transactions that
+  -- result in regenerating the page, not on every xmlhttp request.) 
+  -->
+
+<div id="messages"></div>
+
+<!-- Design on bootstrap grid -->
+<form role="form">
+<div class="row">
+  <div class="col-md-4">
+    <label>Distance</label>
+  <select name="distance" id="brevet_dist_km">
+    <option value="200">200km</option>
+    <option value="300">300km</option>
+    <option value="400">400km</option>
+    <option value="600">600km</option>
+    <option value="1000">1000km</option>
+  </select>
+  </div> <!-- columns 1--4  -->
+  <div class="col-md-6">
+    <label>Begins at</label>
+    <input type=date name="begin_date" id="begin_date" value="2017-01-01" />
+    <input type=time name="begin_time" id="begin_time" value="00:00"    />
+    <input type="submit" id="submit"></input>
+    <input type="button" id="display" value="Display"></input>
+  </div> <!-- columns 5-10 -->
+  </div> <!-- row -->
+
+  <br />  <!-- Cosmetic -- a little vertical space -->
+  <!-- Although we do not use tables for general page layout, they are
+       appropriate for something that really is a table, like this
+       one.  We allocate it the full 12 columns of the bootstrap grid.
+  -->
+  <div class="row">
+  <div class="col-md-12"> 
+  <table class="control_time_table">
+      <tr>
+	<th> Miles </th>
+	<th> Km </th>
+	<th>Location</th>
+	<th>Open</th>
+	<th>Close</th>
+	<th>Notes</th>
+      </tr>
+   {% for row in range(20) %}
+    <tr class="control">
+      <!-- Dist (mi) -->
+      <td><input name="miles" type="number" 
+           min="0" max="900" size="5" /></td>
+      <!-- Dist (km) -->
+      <td><input name="km" type="text"
+	   min="0" max="1100" size="5" /> </td>
+      <!-- Location (optional) -->
+      <td><input name="location" type="text" 
+        placeholder="Optional location name"
+	size="20" /> </td>
+      <!-- Open time (read only, set by JavaScript function -->
+      <td><input name="open" type="datetime" value="" readonly /></td>
+      <!-- Close time (read only, set by JavaScript function -->
+      <td><input name="close" type="datetime" value="" readonly /></td>
+      <!-- Notes (error messages for this row) -->
+      <td class="notes"> &nbsp; </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div> <!-- col -->
+  </div> <!-- row -->
+</form>
+
+<script type="text/javascript">
+
+  var SCRIPT_ROOT = {{ request.script_root|tojson|safe }} ;
+  var TIME_CALC_URL = SCRIPT_ROOT + "/_calc_times";
+
+  // Pass calctimes a <td> element containing the data for a control.
+  // It extracts the distance and calls the server to get times to
+  // fill in open and close times in a human-readable format.
+  // (If we want to also keep the ISO-formatted times, we'll need to
+  // stash them in hidden fields.) 
+  function calc_times(control) {
+    var km = control.find("input[name='km']").val();
+    var open_time_field = control.find("input[name='open']");
+    var close_time_field = control.find("input[name='close']");
+    var notes_field = control.find(".notes");
+    var begin_date = $('#begin_date').val();
+    var begin_time = $('#begin_time').val();
+    var start_time = begin_date + " " + begin_time;
+
+    var brevet_dist_km = $('#brevet_dist_km option:selected').val();
+
+    if (!/^\d*\.?\d*$/.test(km)) {
+            notes_field.text("Error: Input must be a numeric value.");
+            console.log("Input is non-numeric."); 
+            return;
+        }
+      
+    if (km > brevet_dist_km * 1.2) {
+          notes_field.text("Error: Distance cannot be more than 20% longer than brevet distance.");
+          return;
+        }
+        
+    $.getJSON(TIME_CALC_URL, { km: km, start_time: start_time, brevet_dist_km: brevet_dist_km }, 
+      // response handler
+      function(data) {
+         var times = data.result;
+         console.log("Got a response: " +  times);
+         console.log("Response.open = " + times.open);
+         open_time_field.val( moment(times.open).format("ddd M/D H:mm"));
+         close_time_field.val( moment(times.close).format("ddd M/D H:mm"));
+       } 
+     );
+    }
+
+    $(document).ready(function(){
+  // Convert miles to kilometers and trigger times calculation
+  $('input[name="miles"]').change(function() {
+    var miles = parseFloat($(this).val());
+    if (!isNaN(miles)) {
+      var km = (1.609344 * miles).toFixed(1);
+      var control_entry = $(this).closest(".control");
+      var target = control_entry.find("input[name='km']");
+      target.val(km);
+      calc_times(control_entry);
+    }
+  });
+
+  // Convert kilometers to miles and trigger times calculation
+  $('input[name="km"]').change(function() {
+    var km = parseFloat($(this).val());
+    if (!isNaN(km)) {
+      var miles = (0.621371 * km).toFixed(1);
+      var control_entry = $(this).closest(".control");
+      var target = control_entry.find("input[name='miles']");
+      target.val(miles);
+      calc_times(control_entry);
+    }
+  });
+
+  // Trigger calculation when begin date, begin time, or brevet distance change
+  $('#begin_date, #begin_time, #brevet_dist_km').change(function() {
+    $('.control').each(function() {
+      var kmInput = $(this).find("input[name='km']");
+      var kmValue = kmInput.val();
+      if (kmValue.trim() !== "") {
+        calc_times($(this));
+      }
+    });
+  });
+
+  // Function to check if all required fields are filled
+  function allFieldsFilled() {
+    var allFilled = true;
+    $('.control').each(function() {
+      var miles = $(this).find("input[name='miles']").val().trim();
+      var km = $(this).find("input[name='km']").val().trim();
+      var open = $(this).find("input[name='open']").val().trim();
+      var close = $(this).find("input[name='close']").val().trim();
+
+      // Check if the row has any non-empty field
+      if (miles || km) {
+        if (!miles || !km || !open || !close) {
+          allFilled = false;
+          console.log("Missing field in row", $(this));
+        }
+      }
+    });
+    return allFilled;
+  }
+
+  // Handle form submission
+  $('#submit').click(function(event) {
+    event.preventDefault(); // Prevent the default form submission behavior
+    
+    if (allFieldsFilled()) {
+      var controls = [];
+      $('.control').each(function() {
+        var miles = $(this).find("input[name='miles']").val().trim();
+        var km = $(this).find("input[name='km']").val().trim();
+        var location = $(this).find("input[name='location']").val().trim();
+        var open = $(this).find("input[name='open']").val().trim();
+        var close = $(this).find("input[name='close']").val().trim();
+        var brevet_dist_km = $('#brevet_dist_km option:selected').val();
+
+        if (miles || km) {
+          controls.push({
+            miles: miles,
+            km: km,
+            location: location,
+            open: open,
+            close: close,
+            brevet_dist_km: brevet_dist_km
+          });
+        }
+      });
+
+      $.ajax({
+        type: "POST",
+        url: "/submit",
+        contentType: "application/json",
+        data: JSON.stringify({ controls: controls }),
+        success: function(response) {
+          $('#messages').html('<div class="alert alert-success">' + response.message + '</div>');
+        },
+        error: function(xhr) {
+          $('#messages').html('<div class="alert alert-danger">' + xhr.responseJSON.message + '</div>');
+        }
+      });
+    } else {
+      $('#messages').html('<div class="alert alert-warning">Please fill in all fields before submitting.</div>');
+    }
+  });
+
+  // Handle display button click
+  $('#display').click(function() {
+    window.location.href = "/display";
+    return false;
+  });
+
+// Calculate times function
+function calc_times(control) {
+  var km = control.find("input[name='km']").val();
+  var open_time_field = control.find("input[name='open']");
+  var close_time_field = control.find("input[name='close']");
+  var notes_field = control.find(".notes");
+  var begin_date = $('#begin_date').val();
+  var begin_time = $('#begin_time').val();
+  var start_time = begin_date + " " + begin_time;
+  var brevet_dist_km = $('#brevet_dist_km option:selected').val();
+
+  if (!/^\d*\.?\d*$/.test(km)) {
+    notes_field.text("Error: Input must be a numeric value.");
+    return;
+  }
+  if (km > brevet_dist_km * 1.2) {
+    notes_field.text("Error: Distance cannot be more than 20% longer than brevet distance.");
+    return;
+  }
+  
+  $.getJSON(TIME_CALC_URL, { km: km, start_time: start_time, brevet_dist_km: brevet_dist_km }, 
+    function(data) {
+      var times = data.result;
+      open_time_field.val(moment(times.open).format("ddd M/D H:mm"));
+      close_time_field.val(moment(times.close).format("ddd M/D H:mm"));
+    }
+  );
+}
+  });   
+</script>
+
+</div>
+</body> </html>
